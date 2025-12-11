@@ -1,0 +1,427 @@
+Project layout
+billing-service
+├── src
+│   └── main
+│       ├── java
+│       │   └── com.health.billing
+│       │       ├── BillingServiceApplication.java
+│       │       ├── controller
+│       │       │   └── BillingController.java
+│       │       ├── dto
+│       │       │   └── AppointmentEventDTO.java
+│       │       ├── entity
+│       │       │   └── Billing.java
+│       │       ├── kafka
+│       │       │   └── AppointmentEventConsumer.java
+│       │       ├── repository
+│       │       │   └── BillingRepository.java
+│       │       └── service
+│       │           └── BillingService.java
+│       └── resources
+│           ├── application.yml
+│           └── schema.sql
+├── pom.xml
+└── Dockerfile
+
+1) pom.xml
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.health</groupId>
+  <artifactId>billing-service</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+
+  <properties>
+    <java.version>17</java.version>
+    <spring.boot.version>3.2.0</spring.boot.version>
+  </properties>
+
+  <dependencies>
+    <!-- Spring Boot -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- JPA -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+
+    <!-- Postgres -->
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+    </dependency>
+
+    <!-- Kafka -->
+    <dependency>
+      <groupId>org.springframework.kafka</groupId>
+      <artifactId>spring-kafka</artifactId>
+    </dependency>
+
+    <!-- Lombok -->
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <!-- Validation -->
+    <dependency>
+      <groupId>jakarta.validation</groupId>
+      <artifactId>jakarta.validation-api</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+
+2) Main application
+
+BillingServiceApplication.java
+
+package com.health.billing;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class BillingServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(BillingServiceApplication.class, args);
+    }
+}
+
+3) DTO representing the appointment event
+
+The appointment service is sending the full Appointment object as JSON (per your producer). Define a DTO that matches fields you need.
+
+dto/AppointmentEventDTO.java
+
+package com.health.billing.dto;
+
+import java.time.LocalDateTime;
+
+public record AppointmentEventDTO(
+        Long id,
+        Long patientId,
+        Long doctorId,
+        String doctorName,
+        String department,
+        LocalDateTime appointmentTime,
+        String status
+) {}
+
+
+Note: If your appointment producer serializes other field names or nested types, adapt fields accordingly. This DTO is forgiving if extra fields are present.
+
+4) Billing entity
+
+entity/Billing.java
+
+package com.health.billing.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Table(name = "billing")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Billing {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "patient_id", nullable = false)
+    private Long patientId;
+
+    @Column(name = "appointment_id", nullable = false, unique = true)
+    private Long appointmentId;
+
+    @Column(nullable = false)
+    private Double amount;
+
+    @Column(nullable = false)
+    private String status; // PENDING, PAID
+
+    @Column(name = "created_at", nullable = false)
+    private java.time.LocalDateTime createdAt;
+}
+
+
+I set appointment_id unique so you don't create duplicate billing for same appointment — change if you want multiple invoices per appointment.
+
+5) Repository
+
+repository/BillingRepository.java
+
+package com.health.billing.repository;
+
+import com.health.billing.entity.Billing;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+import java.util.Optional;
+
+public interface BillingRepository extends JpaRepository<Billing, Long> {
+    List<Billing> findByPatientIdOrderByCreatedAtDesc(Long patientId);
+    Optional<Billing> findByAppointmentId(Long appointmentId);
+    boolean existsByAppointmentId(Long appointmentId);
+}
+
+6) Service
+
+service/BillingService.java
+
+package com.health.billing.service;
+
+import com.health.billing.dto.AppointmentEventDTO;
+import com.health.billing.entity.Billing;
+import com.health.billing.repository.BillingRepository;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Service
+public class BillingService {
+
+    private final BillingRepository repo;
+
+    // basic fixed fee for demo; later make configurable
+    private static final double CONSULTATION_FEE = 500.0;
+
+    public BillingService(BillingRepository repo) {
+        this.repo = repo;
+    }
+
+    public Billing createBillingFromAppointmentEvent(AppointmentEventDTO evt) {
+        // prevent duplicate invoice for same appointment
+        if (repo.existsByAppointmentId(evt.id())) {
+            return repo.findByAppointmentId(evt.id()).orElseThrow();
+        }
+
+        Billing b = Billing.builder()
+                .patientId(evt.patientId())
+                .appointmentId(evt.id())
+                .amount(CONSULTATION_FEE)
+                .status("PENDING")
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        return repo.save(b);
+    }
+
+    public List<Billing> getByPatient(Long patientId) {
+        return repo.findByPatientIdOrderByCreatedAtDesc(patientId);
+    }
+
+    public Billing getByAppointment(Long appointmentId) {
+        return repo.findByAppointmentId(appointmentId).orElse(null);
+    }
+}
+
+7) Kafka consumer
+
+kafka/AppointmentEventConsumer.java
+
+package com.health.billing.kafka;
+
+import com.health.billing.dto.AppointmentEventDTO;
+import com.health.billing.service.BillingService;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Service;
+
+@Service
+public class AppointmentEventConsumer {
+
+    private final BillingService billingService;
+
+    public AppointmentEventConsumer(BillingService billingService) {
+        this.billingService = billingService;
+    }
+
+    @KafkaListener(topics = "appointment-confirmed", groupId = "billing-group")
+    public void consume(AppointmentEventDTO event) {
+        // log (stdout or use logger)
+        System.out.println("📥 Received appointment-confirmed event: " + event);
+        billingService.createBillingFromAppointmentEvent(event);
+    }
+}
+
+
+Spring Kafka will convert JSON to AppointmentEventDTO if deserializer configured (see application.yml).
+
+8) REST Controller
+
+controller/BillingController.java
+
+package com.health.billing.controller;
+
+import com.health.billing.entity.Billing;
+import com.health.billing.service.BillingService;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/billing")
+@CrossOrigin
+public class BillingController {
+
+    private final BillingService service;
+
+    public BillingController(BillingService service) {
+        this.service = service;
+    }
+
+    @GetMapping("/patient/{patientId}")
+    public List<Billing> getByPatient(@PathVariable Long patientId) {
+        return service.getByPatient(patientId);
+    }
+
+    @GetMapping("/appointment/{appointmentId}")
+    public Billing getByAppointment(@PathVariable Long appointmentId) {
+        return service.getByAppointment(appointmentId);
+    }
+}
+
+9) schema.sql (optional — useful to run manually)
+
+resources/schema.sql
+
+CREATE TABLE IF NOT EXISTS billing (
+    id SERIAL PRIMARY KEY,
+    patient_id BIGINT NOT NULL,
+    appointment_id BIGINT NOT NULL UNIQUE,
+    amount DOUBLE PRECISION NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+
+If you use Hibernate ddl-auto: update, Spring will create the table automatically; use this file if you prefer manual DDL.
+
+10) application.yml
+server:
+  port: 4003
+
+spring:
+  datasource:
+    url: jdbc:postgresql://patient-db:5432/patientdb
+    username: postgres
+    password: postgres
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+
+spring:
+  kafka:
+    bootstrap-servers: kafka:9092
+    consumer:
+      group-id: billing-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "*"
+      # If your producer uses type headers, enable these:
+      # spring.json.value.default.type: com.health.appointment.dto.AppointmentEventDTO
+
+
+Notes:
+
+spring.json.trusted.packages: "*" avoids deserialization issues in local dev. For production, set to specific package(s).
+
+Hostnames patient-db and kafka assume Docker Compose service names. If using different hostnames / ports, change accordingly.
+
+11) Dockerfile
+# builder
+FROM maven:3.9.9-eclipse-temurin-17 AS builder
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+# runtime
+FROM eclipse-temurin:17-jdk
+WORKDIR /app
+COPY --from=builder /app/target/billing-service-0.0.1-SNAPSHOT.jar app.jar
+EXPOSE 4003
+ENTRYPOINT ["java","-jar","/app/app.jar"]
+
+12) Minimal docker-compose snippet
+
+Add this (or adapt) to your existing docker-compose.yml so the billing service joins your stack. I assume you already have postgres (patient-db), kafka, and appointment-service.
+
+services:
+  billing-service:
+    image: billing-service:latest
+    build:
+      context: ./billing-service
+    depends_on:
+      - kafka
+      - patient-db
+    environment:
+      - SPRING_PROFILES_ACTIVE=default
+    ports:
+      - "4003:4003"
+
+  # (existing)
+  # patient-db:
+  #   image: postgres:17
+  #   environment: ...
+  # kafka:
+  #   image: confluentinc/cp-kafka:7.4.0
+  #   depends_on: [zookeeper]
+
+
+After adding, run:
+
+docker-compose up --build
+
+13) How to verify locally
+
+Ensure kafka and patient-db are running and reachable from Docker network.
+
+Start appointment-service (already running on Docker).
+
+Start billing-service (docker-compose up --build billing-service).
+
+Create an appointment via appointment-service API: POST /appointments (this will save & produce event).
+
+Watch billing-service logs — you should see the received event and billing saved.
+
+Verify with API: GET /billing/patient/{id} or query DB directly.
+
+14) Future enhancements (quick list)
+
+Use Payment service → publish payment.completed events
+
+Add invoice numbers, line items, currencies
+
+Add retries / dead-letter queue for Kafka failures
+
+Add tracing/log correlation id for distributed tracing
+
+Add DTOs for responses rather than returning entity directly (I can generate those)
+
+If you want, I’ll now:
+
+generate the exact files with content you can copy, or
+
+produce a ready docker-compose.yml that includes patient-db, kafka, appointment-service, billing-service so you can run everything locally.

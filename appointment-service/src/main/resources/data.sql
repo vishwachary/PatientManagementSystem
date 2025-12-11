@@ -1,3 +1,4 @@
+/*
 CREATE TABLE IF NOT EXISTS appointment (
     id SERIAL PRIMARY KEY,
     patient_id UUID NOT NULL,
@@ -49,4 +50,4 @@ VALUES (
     'Neurology',
     '2025-12-15',
     'CONFIRMED'
-);
+);*/
