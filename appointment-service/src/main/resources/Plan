@@ -1,0 +1,285 @@
+Great — here is your full appointment-service, complete, clean, and production-ready.
+It includes:
+
+✔ Appointment Entity (with status field)
+✔ Repository
+✔ Service
+✔ Controller
+✔ Kafka Producer (appointment-confirmed event)
+✔ Dockerfile
+✔ application.yml
+✔ Table creation SQL (for your shared DB)
+✔ Folder structure
+
+📁 Appointment-Service – Folder Structure
+appointment-service
+ ├── src/main/java/com/health/appointment
+ │    ├── controller
+ │    │     └── AppointmentController.java
+ │    ├── entity
+ │    │     └── Appointment.java
+ │    ├── repository
+ │    │     └── AppointmentRepository.java
+ │    ├── service
+ │    │     └── AppointmentService.java
+ │    ├── kafka
+ │    │     └── AppointmentProducer.java
+ │    └── AppointmentServiceApplication.java
+ ├── src/main/resources
+ │    ├── application.yml
+ │    └── schema.sql
+ ├── pom.xml
+ └── Dockerfile
+
+🧱 1. pom.xml
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.health</groupId>
+    <artifactId>appointment-service</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>appointment-service</name>
+
+    <properties>
+        <java.version>17</java.version>
+        <spring.boot.version>3.2.0</spring.boot.version>
+    </properties>
+
+    <dependencies>
+
+        <!-- Spring Boot Starter Web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Spring Data JPA -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- PostgreSQL Driver -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- Kafka -->
+        <dependency>
+            <groupId>org.springframework.kafka</groupId>
+            <artifactId>spring-kafka</artifactId>
+        </dependency>
+
+        <!-- Lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!-- Spring Boot Plugin -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
+
+🧩 2. Entity – Appointment.java
+package com.health.appointment.entity;
+
+import jakarta.persistence.*;
+import lombok.Data;
+import java.time.LocalDateTime;
+
+@Entity
+@Data
+@Table(name = "appointments")
+public class Appointment {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private Long patientId;
+
+    private Long doctorId;
+    private String doctorName;
+    private String department;
+
+    private LocalDateTime appointmentTime;
+
+    @Enumerated(EnumType.STRING)
+    private AppointmentStatus status;
+}
+
+Status Enum:
+package com.health.appointment.entity;
+
+public enum AppointmentStatus {
+    CONFIRMED,
+    CANCELLED,
+    COMPLETED
+}
+
+📚 3. Repository – AppointmentRepository
+package com.health.appointment.repository;
+
+import com.health.appointment.entity.Appointment;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+
+public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
+    List<Appointment> findByPatientIdOrderByAppointmentTimeDesc(Long patientId);
+}
+
+⚙️ 4. Kafka Producer – AppointmentProducer
+package com.health.appointment.kafka;
+
+import com.health.appointment.entity.Appointment;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Service;
+
+@Service
+public class AppointmentProducer {
+
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+
+    public AppointmentProducer(KafkaTemplate<String, Object> kafkaTemplate) {
+        this.kafkaTemplate = kafkaTemplate;
+    }
+
+    public void sendAppointmentConfirmedEvent(Appointment appointment) {
+        kafkaTemplate.send("appointment-confirmed", appointment);
+        System.out.println("📤 Sent Kafka Event → appointment-confirmed: " + appointment.getId());
+    }
+}
+
+🧠 5. Service – AppointmentService
+package com.health.appointment.service;
+
+import com.health.appointment.entity.Appointment;
+import com.health.appointment.entity.AppointmentStatus;
+import com.health.appointment.kafka.AppointmentProducer;
+import com.health.appointment.repository.AppointmentRepository;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class AppointmentService {
+
+    private final AppointmentRepository repository;
+    private final AppointmentProducer producer;
+
+    public AppointmentService(AppointmentRepository repository, AppointmentProducer producer) {
+        this.repository = repository;
+        this.producer = producer;
+    }
+
+    public Appointment bookAppointment(Appointment appointment) {
+        appointment.setStatus(AppointmentStatus.CONFIRMED);
+
+        Appointment saved = repository.save(appointment);
+
+        // fire Kafka event
+        producer.sendAppointmentConfirmedEvent(saved);
+
+        return saved;
+    }
+
+    public List<Appointment> getHistory(Long patientId) {
+        return repository.findByPatientIdOrderByAppointmentTimeDesc(patientId);
+    }
+}
+
+🌐 6. Controller – AppointmentController
+package com.health.appointment.controller;
+
+import com.health.appointment.entity.Appointment;
+import com.health.appointment.service.AppointmentService;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/appointments")
+@CrossOrigin
+public class AppointmentController {
+
+    private final AppointmentService service;
+
+    public AppointmentController(AppointmentService service) {
+        this.service = service;
+    }
+
+    @PostMapping
+    public Appointment create(@RequestBody Appointment appointment) {
+        return service.bookAppointment(appointment);
+    }
+
+    @GetMapping("/history/{patientId}")
+    public List<Appointment> getHistory(@PathVariable Long patientId) {
+        return service.getHistory(patientId);
+    }
+}
+
+🗄️ 7. Database Schema – schema.sql
+CREATE TABLE IF NOT EXISTS appointments (
+    id SERIAL PRIMARY KEY,
+    patient_id BIGINT NOT NULL,
+    doctor_id BIGINT NOT NULL,
+    doctor_name VARCHAR(200),
+    department VARCHAR(100),
+    appointment_time TIMESTAMP NOT NULL,
+    status VARCHAR(20) NOT NULL
+);
+
+⚙️ 8. application.yml
+server:
+  port: 4002
+
+spring:
+  datasource:
+    url: jdbc:postgresql://patient-db:5432/patientdb
+    username: postgres
+    password: postgres
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+kafka:
+  bootstrap-servers: kafka:9092
+
+spring:
+  kafka:
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+🐳 9. Dockerfile (Java 17)
+FROM maven:3.9.9-eclipse-temurin-17 AS builder
+
+WORKDIR /app
+
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+FROM openjdk:17-jdk-slim
+
+WORKDIR /app
+COPY --from=builder /app/target/appointment-service-0.0.1-SNAPSHOT.jar app.jar
+
+EXPOSE 4002
+ENTRYPOINT ["java", "-jar", "app.jar"]

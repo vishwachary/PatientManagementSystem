@@ -14,8 +14,8 @@ FROM eclipse-temurin:17-jdk AS runner
 
 WORKDIR /app
 
-COPY --from=builder /app/target/patient-service-0.0.1-SNAPSHOT.jar ./app.jar
+COPY --from=builder /app/target/patient-service-0.0.1-SNAPSHOT.jar ./patient-service-app.jar
 
 EXPOSE 4000
 
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-jar", "patient-service-app.jar"]

@@ -3,3 +3,14 @@ GET http://localhost:8080/api/v1/patientss
 
 c
 ###
+
+http://localhost:4000/api/v1/patients
+
+{
+ "name": "naresh"
+ "email": "naresh@example.com"
+ "address":"345 hanuman street"
+ "dateOfBirth":"2001-01-08"
+ "registeredDate":"2022-02-09"
+
+}
