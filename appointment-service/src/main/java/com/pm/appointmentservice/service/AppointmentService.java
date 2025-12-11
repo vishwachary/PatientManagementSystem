@@ -23,9 +23,13 @@ public class AppointmentService {
 
 
     private final AppointmentRepository appointmentRepository;
-    public AppointmentService(AppointmentRepository appointmentRepository) {
+    private final  AppointmentProducer producer;
+    public AppointmentService(AppointmentRepository appointmentRepository, AppointmentProducer producer) {
         this.appointmentRepository = appointmentRepository;
+        this.producer = producer;
     }
+
+
 
     public AppointmentResponseDTO createAppointment(AppointmentRequestDTO appointmentRequestDTO)
     {
@@ -40,6 +44,12 @@ public class AppointmentService {
     }
 
         Appointment newAppointment = appointmentRepository.save(AppointmentMapper.toModel(appointmentRequestDTO));
+        logger.info("New Appointment Created Successfully");
+
+        logger.info("Called producer to sent message to kafka topic Successfully {}", newAppointment);
+        // fire Kafka event
+        producer.sendAppointmentConfirmedEvent(newAppointment);
+
         return AppointmentMapper.toDTO(newAppointment);
 
     }
@@ -49,9 +59,9 @@ public class AppointmentService {
 
         List<Appointment> allAppointmentAsEntity = appointmentRepository.findAll();
 
-        logger.debug("allAppointmentAsEntity = " + allAppointmentAsEntity);
+        logger.info("allAppointmentAsEntity { }", allAppointmentAsEntity);
         allAppointmentAsEntity.stream().forEach(System.out::println);
-        logger.debug("allAppointmentAsEntity = " + allAppointmentAsEntity);
+
 
         List<AppointmentResponseDTO> appointmentResponseDTOList = new ArrayList<>();
 

@@ -283,3 +283,16 @@ COPY --from=builder /app/target/appointment-service-0.0.1-SNAPSHOT.jar app.jar
 
 EXPOSE 4002
 ENTRYPOINT ["java", "-jar", "app.jar"]
+
+
+
+Set the below ENV variables while creating the Docker image
+
+SPRING_DATASOURCE_PASSWORD=password
+SPRING_DATASOURCE_URL=jdbc:postgresql://patient-service-db:5432/db
+SPRING_DATASOURCE_USERNAME=admin_user
+SPRING_JPA_HIBERNATE_DDL_AUTO=update
+SPRING_SQL_INIT_MODE=always
+SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+SPRING_KAFKA_PRODUCER_KEY_SERIALIZER=org.apache.kafka.common.serialization.StringSerializer
+SPRING_KAFKA_PRODUCER_VALUE_SERIALIZER=org.springframework.kafka.support.serializer.JsonSerializer
