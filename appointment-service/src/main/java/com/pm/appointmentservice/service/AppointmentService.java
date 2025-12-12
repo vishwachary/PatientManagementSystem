@@ -3,12 +3,12 @@ package com.pm.appointmentservice.service;
 import com.pm.appointmentservice.dto.AppointmentRequestDTO;
 import com.pm.appointmentservice.dto.AppointmentResponseDTO;
 import com.pm.appointmentservice.exception.AppointmentAlreadyExistsException;
+import com.pm.appointmentservice.kafka.AppointmentProducer;
 import com.pm.appointmentservice.mapper.AppointmentMapper;
 import com.pm.appointmentservice.model.Appointment;
 import com.pm.appointmentservice.repository.AppointmentRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -23,7 +23,7 @@ public class AppointmentService {
 
 
     private final AppointmentRepository appointmentRepository;
-    private final  AppointmentProducer producer;
+    private final AppointmentProducer producer;
     public AppointmentService(AppointmentRepository appointmentRepository, AppointmentProducer producer) {
         this.appointmentRepository = appointmentRepository;
         this.producer = producer;

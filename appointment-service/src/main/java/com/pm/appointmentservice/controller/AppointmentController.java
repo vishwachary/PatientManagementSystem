@@ -22,6 +22,11 @@ public class AppointmentController {
         this.appointmentService = appointmentService;
     }
 
+    @GetMapping("/welcome")
+    public String welcomeMessage() {
+        return "Welcome to Appointment Service";
+    }
+
     @PostMapping("/appointments")
     @Operation(summary = "create a new appointment")
     public ResponseEntity<AppointmentResponseDTO> createAppointment(@RequestBody @Valid AppointmentRequestDTO appointmentRequestDTO){

@@ -1,7 +1,7 @@
 
 OFFSET EXPLORER
 
-D:\softwares\kafka_2.12-3.5.0\bin\windows
+cd
 
 D:\softwares\kafka_2.12-3.5.0\bin\windows> .\zookeeper-server-start.bat ..\..\config\zookeeper.properties
 
@@ -20,3 +20,34 @@ D:\softwares\kafka_2.12-3.5.0\bin\windows> .\zookeeper-server-start.bat ..\..\co
 
 .\kafka-topics.bat --create --topic appointment-confirmed --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
 
+
+http://localhost:9092
+
+
+
+Find:
+
+listeners=PLAINTEXT://:9092
+advertised.listeners=PLAINTEXT://localhost:9092
+
+
+Change to:
+
+listeners=PLAINTEXT://:9092
+advertised.listeners=PLAINTEXT://host.docker.internal:9092
+
+
+
+Update your environment variable in IntelliJ Docker run config:
+
+Change:
+
+SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+
+
+TO:
+
+SPRING_KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
+
+
+This resolves 99% of Windows + Docker issues.

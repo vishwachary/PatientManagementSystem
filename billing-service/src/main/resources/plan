@@ -1,3 +1,6 @@
+//SWAGGER
+http://localhost:4004/swagger-ui/index.html
+
 Project layout
 billing-service
 ├── src
